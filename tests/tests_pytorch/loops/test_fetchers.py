@@ -164,7 +164,7 @@ DATASET_LEN = 64
 
 
 @pytest.mark.parametrize("automatic_optimization", [False, True])
-def test_fetching_dataloader_iter_opt(automatic_optimization, tmpdir):
+def test_fetching_dataloader_iter_opt(automatic_optimization, tmp_path):
     class TestModel(BoringModel):
         def __init__(self, *args, automatic_optimization: bool = False, **kwargs):
             super().__init__(*args, **kwargs)
@@ -202,7 +202,7 @@ def test_fetching_dataloader_iter_opt(automatic_optimization, tmpdir):
             assert self.count == 64
 
     model = TestModel(automatic_optimization=automatic_optimization)
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=1, accelerator="cpu")
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=1, accelerator="cpu")
     trainer.fit(model)
 
 
@@ -308,16 +308,16 @@ class AsyncBoringModel(BoringModel):
         return DataLoader(RandomDataset(BATCH_SIZE, DATASET_LEN))
 
 
-def test_training_step_with_dataloader_access(tmpdir) -> None:
+def test_training_step_with_dataloader_access(tmp_path) -> None:
     """A baseline functional test for `training_step` with dataloader access."""
-    trainer = Trainer(max_epochs=1, default_root_dir=tmpdir, accelerator="cpu")
+    trainer = Trainer(max_epochs=1, default_root_dir=tmp_path, accelerator="cpu")
     m = AsyncBoringModel()
     trainer.fit(m)
     assert m.num_batches_processed == DATASET_LEN, f"Expect all {DATASET_LEN} batches to be processed."
 
 
 @pytest.mark.parametrize("trigger_stop_iteration", [False, True])
-def test_stop_iteration(trigger_stop_iteration, tmpdir):
+def test_stop_iteration(trigger_stop_iteration, tmp_path):
     """Verify that StopIteration properly terminates the training when this is triggered from the current
     `dataloader_iter`"""
     EXPECT_NUM_BATCHES_PROCESSED = 2
@@ -339,7 +339,7 @@ def test_stop_iteration(trigger_stop_iteration, tmpdir):
                 return DataLoader(RandomDataset(BATCH_SIZE, 2 * EXPECT_NUM_BATCHES_PROCESSED))
             return DataLoader(RandomDataset(BATCH_SIZE, EXPECT_NUM_BATCHES_PROCESSED))
 
-    trainer = Trainer(max_epochs=1, default_root_dir=tmpdir, accelerator="cpu")
+    trainer = Trainer(max_epochs=1, default_root_dir=tmp_path, accelerator="cpu")
     m = TestModel(trigger_stop_iteration)
     trainer.fit(m)
     expected = EXPECT_NUM_BATCHES_PROCESSED
@@ -348,7 +348,7 @@ def test_stop_iteration(trigger_stop_iteration, tmpdir):
     assert m.num_batches_processed == expected
 
 
-def test_on_train_batch_start_overridden(tmpdir) -> None:
+def test_on_train_batch_start_overridden(tmp_path) -> None:
     """Verify that a `MisconfigurationException` is raised when `on_train_batch_start` is overridden on the
     `LightningModule`."""
 
@@ -356,13 +356,13 @@ def test_on_train_batch_start_overridden(tmpdir) -> None:
         def on_train_batch_start(self, batch, batch_idx):
             pass
 
-    trainer = Trainer(fast_dev_run=1, default_root_dir=tmpdir, accelerator="cpu")
+    trainer = Trainer(fast_dev_run=1, default_root_dir=tmp_path, accelerator="cpu")
     m = InvalidModel()
     with pytest.warns(match="InvalidModel.on_train_batch_start` hook may not match"):
         trainer.fit(m)
 
 
-def test_on_train_batch_end_overridden(tmpdir) -> None:
+def test_on_train_batch_end_overridden(tmp_path) -> None:
     """Verify that a `MisconfigurationException` is raised when `on_train_batch_end` is overridden on the
     `LightningModule`."""
 
@@ -370,13 +370,13 @@ def test_on_train_batch_end_overridden(tmpdir) -> None:
         def on_train_batch_end(self, *_):
             pass
 
-    trainer = Trainer(fast_dev_run=1, default_root_dir=tmpdir, accelerator="cpu")
+    trainer = Trainer(fast_dev_run=1, default_root_dir=tmp_path, accelerator="cpu")
     m = InvalidModel()
     with pytest.warns(match="InvalidModel.on_train_batch_end` hook may not match"):
         trainer.fit(m)
 
 
-def test_transfer_hooks_with_unpacking(tmpdir):
+def test_transfer_hooks_with_unpacking(tmp_path):
     """This test asserts the `transfer_batch` hooks are called only once per batch."""
 
     class RandomDictDataset(RandomDataset):
@@ -415,7 +415,7 @@ def test_transfer_hooks_with_unpacking(tmpdir):
             x, _ = batch
             return super().validation_step(x, batch_idx)
 
-    trainer = Trainer(default_root_dir=tmpdir, max_epochs=1, num_sanity_val_steps=0)
+    trainer = Trainer(default_root_dir=tmp_path, max_epochs=1, num_sanity_val_steps=0)
     dm = BoringDataModule()
     trainer.fit(TestModel(), datamodule=dm)
     assert dm.count_called_on_before_batch_transfer == 4
