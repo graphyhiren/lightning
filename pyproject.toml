@@ -131,7 +131,6 @@ files = [
 exclude = [
     "src/lightning/app/cli/app-template",
     "src/lightning/app/cli/component-template",
-    "src/lightning/app/cli/pl-app-template",
     "src/lightning/app/cli/react-ui-template",
 ]
 install_types = "True"
