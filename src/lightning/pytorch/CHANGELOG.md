@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/).
 
 - Added `on_exception` hook to `LightningDataModule` ([#19601](https://github.com/Lightning-AI/pytorch-lightning/pull/19601))
 
+- Fixed `_LoggerConnector`'s `_ResultMetric` to move all registered keys to the current device ([#19813](https://github.com/Lightning-AI/pytorch-lightning/issues/19813))
+
 -
 
 ### Changed
