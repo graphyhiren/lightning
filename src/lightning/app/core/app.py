@@ -35,6 +35,7 @@ from lightning.app.core.constants import (
     FLOW_DURATION_SAMPLES,
     FLOW_DURATION_THRESHOLD,
     FRONTEND_DIR,
+    SHOULD_START_WORKS_WITH_FLOW,
     STATE_ACCUMULATE_WAIT,
 )
 from lightning.app.core.queues import BaseQueue
@@ -55,7 +56,7 @@ from lightning.app.utilities.component import _convert_paths_after_init, _valida
 from lightning.app.utilities.enum import AppStage, CacheCallsKeys
 from lightning.app.utilities.exceptions import CacheMissException, ExitAppException, LightningFlowException
 from lightning.app.utilities.layout import _collect_layout
-from lightning.app.utilities.proxies import ComponentDelta
+from lightning.app.utilities.proxies import ComponentDelta, unwrap
 from lightning.app.utilities.scheduler import SchedulerThread
 from lightning.app.utilities.tree import breadth_first
 from lightning.app.utilities.warnings import LightningFlowWarning
@@ -144,6 +145,7 @@ class LightningApp:
         self.threads: List[threading.Thread] = []
         self.exception = None
         self.collect_changes: bool = True
+        self._should_start_works_with_flow: bool = SHOULD_START_WORKS_WITH_FLOW
 
         self.status: Optional[AppStatus] = None
         # TODO: Enable ready locally for opening the UI.
@@ -526,7 +528,13 @@ class LightningApp:
 
         self.ready = self.root.ready
 
-        self._start_with_flow_works()
+        if self._should_start_works_with_flow:
+            logger.debug("STARTING WORKS WITH FLOW")
+            self._start_with_flow_works()
+        else:
+            self._create_works()
+
+        logger.debug("ready to loop over the flow")
 
         if self.should_publish_changes_to_api and self.api_publish_state_queue is not None:
             self.api_publish_state_queue.put((self.state_vars, self.status))
@@ -739,3 +747,17 @@ class LightningApp:
                 w._parallel = True
                 w.start()
                 w._parallel = parallel
+
+    def _create_works(self) -> None:
+        if os.getenv("DISTRIBUTED_ARGUMENTS") is not None:
+            return
+
+        for work in self.works:
+            logger.debug(f"creating {work.name}")
+            _backend = work._backend
+            work._backend = None
+            work.run = unwrap(work.run)
+            self.backend._register_queues(self, work)
+            self.backend.create_work(self, work)
+            work._backend = _backend
+            self.backend._wrap_run_method(self, work)  # type: ignore[arg-type]

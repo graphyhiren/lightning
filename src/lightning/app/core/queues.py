@@ -14,10 +14,10 @@
 
 import base64
 import multiprocessing
+import os
 import pickle
 import queue  # needed as import instead from/import for mocking in tests
 import time
-import warnings
 from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
@@ -25,6 +25,7 @@ from typing import Any, List, Optional, Tuple
 from urllib.parse import urljoin
 
 import backoff
+import msgpack
 import requests
 from requests.exceptions import ConnectionError, ConnectTimeout, ReadTimeout
 
@@ -41,7 +42,6 @@ from lightning.app.core.constants import (
     REDIS_PORT,
     REDIS_QUEUES_READ_DEFAULT_TIMEOUT,
     STATE_UPDATE_TIMEOUT,
-    WARNING_QUEUE_SIZE,
 )
 from lightning.app.utilities.app_helpers import Logger
 from lightning.app.utilities.imports import _is_redis_available, requires
@@ -80,6 +80,8 @@ class QueuingSystem(Enum):
             return MultiProcessQueue(queue_name, default_timeout=STATE_UPDATE_TIMEOUT)
         if self == QueuingSystem.REDIS:
             return RedisQueue(queue_name, default_timeout=REDIS_QUEUES_READ_DEFAULT_TIMEOUT)
+        if CALLER_QUEUE_CONSTANT in queue_name and os.getenv("LIGHTNING_CLOUD_WORK_NAME") is None:
+            return HTTPQueue(queue_name, default_timeout=STATE_UPDATE_TIMEOUT)
         return RateLimitedQueue(
             HTTPQueue(queue_name, default_timeout=STATE_UPDATE_TIMEOUT), HTTP_QUEUE_REQUESTS_PER_SECOND
         )
@@ -284,14 +286,14 @@ class RedisQueue(BaseQueue):
             item._backend = None
 
         value = pickle.dumps(item)
-        queue_len = self.length()
-        if queue_len >= WARNING_QUEUE_SIZE:
-            warnings.warn(
-                f"The Redis Queue {self.name} length is larger than the "
-                f"recommended length of {WARNING_QUEUE_SIZE}. "
-                f"Found {queue_len}. This might cause your application to crash, "
-                "please investigate this."
-            )
+        # queue_len = self.length()
+        # if queue_len >= WARNING_QUEUE_SIZE:
+        #     warnings.warn(
+        #         f"The Redis Queue {self.name} length is larger than the "
+        #         f"recommended length of {WARNING_QUEUE_SIZE}. "
+        #         f"Found {queue_len}. This might cause your application to crash, "
+        #         "please investigate this."
+        #     )
         try:
             self.redis.rpush(self.name, value)
         except redis.exceptions.ConnectionError:
@@ -451,6 +453,9 @@ class HTTPQueue(BaseQueue):
             return False
         return False
 
+    @backoff.on_exception(
+        backoff.expo, (RuntimeError, requests.exceptions.HTTPError, requests.exceptions.ChunkedEncodingError)
+    )
     def get(self, timeout: Optional[float] = None) -> Any:
         if not self.app_id:
             raise ValueError(f"App ID couldn't be extracted from the queue name: {self.name}")
@@ -498,7 +503,14 @@ class HTTPQueue(BaseQueue):
             resp = self.client.post(f"v1/{self.app_id}/{self._name_suffix}", query_params={"action": "pop"})
             if resp.status_code == 204:
                 raise queue.Empty
-            return pickle.loads(resp.content)
+
+            if (
+                WORK_QUEUE_CONSTANT in self.name
+                or DELTA_QUEUE_CONSTANT in self.name
+                or ERROR_QUEUE_CONSTANT in self.name
+            ):
+                return pickle.loads(resp.content)
+            return msgpack.unpackb(resp.content)
         except ConnectionError:
             # Note: If the Http Queue service isn't available,
             # we consider the queue is empty to avoid failing the app.
@@ -512,24 +524,30 @@ class HTTPQueue(BaseQueue):
             )
             if resp.status_code == 204:
                 raise queue.Empty
-            return [pickle.loads(base64.b64decode(data)) for data in resp.json()]
+
+            if (
+                WORK_QUEUE_CONSTANT in self.name
+                or DELTA_QUEUE_CONSTANT in self.name
+                or ERROR_QUEUE_CONSTANT in self.name
+            ):
+                return [pickle.loads(base64.b64decode(data)) for data in resp.json()]
+            return [msgpack.unpackb(base64.b64decode(data)) for data in resp.json()]
         except ConnectionError:
             # Note: If the Http Queue service isn't available,
             # we consider the queue is empty to avoid failing the app.
             raise queue.Empty
 
-    @backoff.on_exception(backoff.expo, (RuntimeError, requests.exceptions.HTTPError))
+    @backoff.on_exception(
+        backoff.expo, (RuntimeError, requests.exceptions.HTTPError, requests.exceptions.ChunkedEncodingError)
+    )
     def put(self, item: Any) -> None:
         if not self.app_id:
             raise ValueError(f"The Lightning App ID couldn't be extracted from the queue name: {self.name}")
 
-        value = pickle.dumps(item)
-        queue_len = self.length()
-        if queue_len >= WARNING_QUEUE_SIZE:
-            warnings.warn(
-                f"The Queue {self._name_suffix} length is larger than the recommended length of {WARNING_QUEUE_SIZE}. "
-                f"Found {queue_len}. This might cause your application to crash, please investigate this."
-            )
+        if WORK_QUEUE_CONSTANT in self.name or DELTA_QUEUE_CONSTANT in self.name or ERROR_QUEUE_CONSTANT in self.name:
+            value = pickle.dumps(item, protocol=pickle.HIGHEST_PROTOCOL)
+        else:
+            value = msgpack.packb(item)
         resp = self.client.post(f"v1/{self.app_id}/{self._name_suffix}", data=value, query_params={"action": "push"})
         if resp.status_code != 201:
             raise RuntimeError(f"Failed to push to queue: {self._name_suffix}")

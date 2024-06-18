@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from abc import ABC, abstractmethod
 from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, List, Optional
@@ -71,8 +72,9 @@ class Backend(ABC):
 
         work.run = work_run
 
-        # 2. Create the work
-        self.create_work(app, work)
+        if os.getenv("DISTRIBUTED_ARGUMENTS") is None:
+            # 2. Create the work
+            self.create_work(app, work)
 
         # 3. Attach backend
         work._backend = self
