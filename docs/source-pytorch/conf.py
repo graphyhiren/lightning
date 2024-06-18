@@ -91,7 +91,7 @@ _transform_changelog(
 assist_local.AssistantCLI.pull_docs_files(
     gh_user_repo="Lightning-AI/lightning-Habana",
     target_dir="docs/source-pytorch/integrations/hpu",
-    checkout="refs/tags/1.4.0",
+    checkout="refs/tags/1.5.0",
 )
 
 # Copy strategies docs as single pages
@@ -459,6 +459,7 @@ nitpick_ignore = [
     ("py:class", "lightning.pytorch.utilities.types.LRSchedulerConfig"),
     ("py:class", "lightning.pytorch.utilities.types.OptimizerLRSchedulerConfig"),
     ("py:class", "lightning_habana.pytorch.plugins.precision.HPUPrecisionPlugin"),
+    ("py:class", "lightning_habana.pytorch.strategies.HPUDDPStrategy"),
     ("py:class", "lightning_habana.pytorch.strategies.HPUParallelStrategy"),
     ("py:class", "lightning_habana.pytorch.strategies.SingleHPUStrategy"),
     ("py:obj", "logger.experiment"),
